@@ -13,17 +13,17 @@
       <div>
         <h1>Design House</h1>
         <div class="address-row">
-          <input id="address" class="address" />
-          <button id="lookup" class="ghost" title="Fetch house photos from Zillow">⌕ Fetch listing</button>
+          <input id="address" class="address" placeholder="Enter a property address…" />
+          <button id="lookup" class="ghost" title="Fetch public-record house facts">⌕ Fetch facts</button>
         </div>
       </div>
     </div>
     <div class="meta">
       <label>Beds <input id="beds" type="number" min="0" class="num" /></label>
       <label>Baths <input id="baths" type="number" min="0" step="0.5" class="num" /></label>
-      <button id="rebuild" class="ghost" title="Rebuild room tabs from bed/bath counts">↻ Rebuild rooms</button>
+      <button id="rebuild" class="ghost" title="Build the room list from bed/bath counts">↻ Build rooms</button>
       <span id="provider" class="badge"></span>
-      <button id="report" class="primary">Generate report →</button>
+      <button id="report" class="primary">Print report →</button>
     </div>
   </header>
 
