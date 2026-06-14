@@ -81,7 +81,12 @@ input:focus, textarea:focus { outline: 2px solid #cfe0d6; }
 .field.paint { display: grid; grid-template-columns: 1fr 96px; gap: 8px; }
 .spec-actions { margin-top: 6px; }
 
-/* Address + listing lookup */
+/* Empty state */
+.empty-state { max-width: 520px; margin: 8vh auto 0; text-align: center; color: var(--muted); }
+.empty-state h2 { font-family: Georgia, serif; color: var(--ink); font-size: 26px; margin: 0 0 10px; }
+.empty-state p { font-size: 15px; line-height: 1.5; }
+
+/* Address + lookup */
 .address-row { display: flex; align-items: center; gap: 8px; }
 .address-row .ghost { font-size: 12px; padding: 4px 9px; }
 .listing-tab { font-weight: 600; margin-bottom: 8px; border-bottom: 1px solid var(--line); border-radius: 8px 8px 0 0; }

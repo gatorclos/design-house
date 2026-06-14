@@ -1,75 +1,61 @@
-# Design House — local room-by-room redesign studio
+# Design House — room-by-room redesign studio
 
-A local-only web app for redesigning a home one room at a time. Generate room
-tabs from a listing, upload each room's photo, produce AI redesigns, refine them
-with targeted text edits, then export a build report (paint colors, wood/flooring,
-furniture, notes) you can hand to a contractor.
+A web app for redesigning a home one room at a time. Enter an address to pull
+real public-record house facts, build a room list, add an optional "before" photo
+of each room (kept on your device), generate photorealistic AI redesigns, refine
+them with text edits, and print a build report (paint, wood/flooring, furniture,
+notes) for a contractor.
 
-Built for **11505 Old Creedmoor Rd, Raleigh, NC 27613** but works for any home.
+Deployed on Vercel; state lives in your browser.
+
+## Architecture
+
+- **Client-owned state.** Your project (address, beds/baths, rooms, design specs)
+  is stored in the browser's `localStorage` — nothing is stored on a server.
+- **Source photos are local-only.** You pick a local image; it stays in the
+  browser and is only sent *transiently* to the image-gen API when you Generate.
+  It is never uploaded for storage.
+- **Thin server.** Two stateless functions hold the secret API keys: the house
+  lookup (`/api/lookup`) and the Pixa generation proxy (`/api/generate` +
+  `/api/asset/:id`). The generate→poll split keeps each call within serverless
+  time limits.
 
 ## Features
-- **Listing lookup** — enter an address to fetch house photos from Zillow, import
-  them to the project, and push any photo straight into a room as its source.
-- **Room tabs** auto-generated from bed/bath counts (add / rename / delete freely).
-- **Upload** a source photo per room — stored locally on disk under `./data/`.
-- **Generate** a photorealistic redesign from the source photo.
-- **Regenerate** for a fresh variation.
-- **Apply change** — type a specific edit ("sage green walls, brass fixtures")
-  to modify the current redesign; otherwise it regenerates from the source.
+- **Fetch facts** — enter an address → real beds/baths/sqft/year from public
+  records (RentCast) → auto-builds the room list.
+- **Room tabs** (add / rename / delete freely).
+- **Choose local photo** per room — guides the redesign, never leaves your device
+  except transiently at generation time.
+- **Generate / Regenerate / Apply change** — real redesigns via Pixa.
 - **Download** any redesign.
-- **Design spec** per room (style, wall/trim paint + hex, flooring, wood/millwork,
-  furniture, notes).
-- **Build report** — one printable page aggregating every room's redesign + spec.
+- **Design spec** per room (style, wall/trim paint + hex, flooring, wood, furniture, notes).
+- **Print report** — one page aggregating every room's redesign + spec.
 
-## Run it
+## Run it locally
 
 ```bash
 npm install
-cp .env.example .env      # optional — see below
+cp .env.example .env     # fill in the two keys below
 npm start
 # open http://localhost:4178
 ```
 
-## Image generation
+## Required keys
 
-The Generate / Regenerate / Apply-change buttons call an image provider:
+There is **no mock fallback** — real lookups and real generation need keys:
 
-- **Pixa (real images):** set `PIXA_API_KEY` in `.env`. Confirm `PIXA_API_BASE`
-  and `PIXA_MODEL` against your Pixa dashboard's API tab. The adapter in
-  `server/lib/pixa.js` does generate → poll → download and accepts several
-  common response shapes; tweak it there if your account's API differs.
-- **Mock (no key):** with no key set, the app runs in **mock mode** — every
-  button works and returns a labeled placeholder image so you can click through
-  the entire flow (tabs, upload, generate, edit, report) before wiring real
-  credentials.
+| Variable | Purpose | Where to get it |
+|----------|---------|-----------------|
+| `PROPERTY_API_KEY` | House facts by address | RentCast free tier (~50/mo) — https://app.rentcast.io |
+| `PIXA_API_KEY` | Image generation | Your Pixa dashboard |
 
-Recommended model: `seedream-v5-lite` (strong image editing, ~16 credits/image).
-Alternatives: `nano-banana-2`, `seedream-v4-5`, `gpt-image-2`, `grok-imagine-image`.
+Optional: `PROPERTY_API_HOST` (default `api.rentcast.io`), `PIXA_API_BASE`,
+`PIXA_MODEL` (default `nano-banana`), `PIXA_RESOLUTION`, `PIXA_ASPECT_RATIO`.
 
-## Listing lookup (Zillow)
+## Deploying (Vercel)
 
-The **🏠 Listing** tab (or the **⌕ Fetch listing** button) looks up a house by
-address and pulls its photos:
-
-- **RapidAPI (real data):** set `ZILLOW_RAPIDAPI_KEY` in `.env` (and optionally
-  `ZILLOW_RAPIDAPI_HOST`, default `zillow-com1.p.rapidapi.com`). Zillow has no
-  public API and blocks scraping, so the adapter in `server/lib/zillow.js` calls
-  a third-party Zillow listing API and maps the response; tweak the mapping there
-  if your provider's shape differs.
-- **Mock (no key):** with no key set, the lookup runs in **mock mode**, returning
-  deterministic placeholder photos and stats so you can click through the whole
-  flow before wiring real credentials.
-
-Look up → review photos → **Import to project** (optionally adopting the
-address/beds/baths) → on any imported photo, pick a room and **Use as source →**
-to drop it into that room and redesign it.
-
-## Where data lives
-
-Everything is on your machine under `./data/` (git-ignored):
-- `data/project.json` — rooms, specs, generation history, imported listing
-- `data/rooms/<roomId>/source.*` — room source photos
-- `data/rooms/<roomId>/gen-*.{png,jpg,svg}` — redesigns
-- `data/listing/*` — imported Zillow listing photos
-
-Delete `./data/` to start fresh.
+The repo is set up for Vercel (`api/index.js` + `vercel.json`). Pushes to the
+production branch auto-deploy. After importing the project, add `PROPERTY_API_KEY`
+and `PIXA_API_KEY` under **Project → Settings → Environment Variables**, then
+redeploy. The deployed serverless functions reach the external APIs (lookups and
+generation), while your browser holds all project state.
