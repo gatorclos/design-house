@@ -6,7 +6,10 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const DATA_DIR = path.join(__dirname, '..', '..', 'data');
+// Local disk by default; on Vercel the bundle is read-only, so fall back to the
+// writable /tmp dir (ephemeral per instance — fine for a demo). Override with DATA_DIR.
+export const DATA_DIR = process.env.DATA_DIR
+  || (process.env.VERCEL ? '/tmp/design-house-data' : path.join(__dirname, '..', '..', 'data'));
 const PROJECT_FILE = path.join(DATA_DIR, 'project.json');
 export const ROOMS_DIR = path.join(DATA_DIR, 'rooms');
 export const LISTING_DIR = path.join(DATA_DIR, 'listing');
