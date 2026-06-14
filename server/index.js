@@ -238,11 +238,17 @@ app.get('/api/report', wrap(async (req, res) => {
   res.type('html').send(buildReport(project));
 }));
 
-const PORT = process.env.PORT || 4178;
-app.listen(PORT, () => {
-  const info = providerInfo();
-  console.log(`\n  Design House running →  http://localhost:${PORT}`);
-  console.log(`  Image provider: ${info.provider}${info.provider === 'pixa' ? ` (${info.model} @ ${info.base})` : ' — set PIXA_API_KEY in .env for real generations'}`);
-  const z = zillowInfo();
-  console.log(`  Zillow lookup:  ${z.provider}${z.provider === 'rapidapi' ? ` (@ ${z.host})` : ' — set ZILLOW_RAPIDAPI_KEY in .env for real listings'}\n`);
-});
+// Export the app for serverless platforms (e.g. Vercel). Only bind a port when
+// run directly as a normal Node process.
+export default app;
+
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 4178;
+  app.listen(PORT, () => {
+    const info = providerInfo();
+    console.log(`\n  Design House running →  http://localhost:${PORT}`);
+    console.log(`  Image provider: ${info.provider}${info.provider === 'pixa' ? ` (${info.model} @ ${info.base})` : ' — set PIXA_API_KEY in .env for real generations'}`);
+    const z = zillowInfo();
+    console.log(`  Zillow lookup:  ${z.provider}${z.provider === 'rapidapi' ? ` (@ ${z.host})` : ' — set ZILLOW_RAPIDAPI_KEY in .env for real listings'}\n`);
+  });
+}
