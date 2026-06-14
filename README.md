@@ -46,10 +46,11 @@ There is **no mock fallback** — real lookups and real generation need keys:
 
 | Variable | Purpose | Where to get it |
 |----------|---------|-----------------|
-| `PROPERTY_API_KEY` | House facts by address | RentCast free tier (~50/mo) — https://app.rentcast.io |
+| `RENTCAST_API_KEY` | House facts by address (RentCast) | Free tier (~50/mo) — https://app.rentcast.io |
 | `PIXA_API_KEY` | Image generation | Your Pixa dashboard |
 
-Optional: `PROPERTY_API_HOST` (default `api.rentcast.io`), `PIXA_API_BASE`,
+`PROPERTY_API_KEY` is accepted as a fallback name for the RentCast key. Optional:
+`RENTCAST_API_HOST` (default `api.rentcast.io`), `PIXA_API_BASE`,
 `PIXA_MODEL` (default `nano-banana`), `PIXA_RESOLUTION`, `PIXA_ASPECT_RATIO`.
 
 ## Deploying (Vercel)

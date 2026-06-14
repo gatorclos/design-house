@@ -1,14 +1,15 @@
-// Property-data adapter.
+// Property-data adapter — RentCast (https://api.rentcast.io).
 //
 // Returns real public-record house facts (beds/baths/sqft/year) for an address.
-// There is no free, keyless property API, so this calls a keyed provider —
-// RentCast by default (free tier: ~50 requests/month). The provider mapping is
-// centralized here so it can be swapped without touching routes or the client.
+// Free tier: ~50 requests/month. No silent mock: if no key is configured,
+// callers get a clear error.
 //
-// No silent mock: if no key is configured, callers get a clear error.
+// Accepts the RentCast-named env vars first, falling back to the generic ones,
+// so it works whether the key is set as RENTCAST_API_KEY or PROPERTY_API_KEY.
 
-const KEY = process.env.PROPERTY_API_KEY || '';
-const HOST = (process.env.PROPERTY_API_HOST || 'api.rentcast.io').replace(/^https?:\/\//, '').replace(/\/$/, '');
+const KEY = process.env.RENTCAST_API_KEY || process.env.PROPERTY_API_KEY || '';
+const HOST = (process.env.RENTCAST_API_HOST || process.env.PROPERTY_API_HOST || 'api.rentcast.io')
+  .replace(/^https?:\/\//, '').replace(/\/$/, '');
 
 export function propertyInfo() {
   return { provider: KEY ? 'rentcast' : 'none', host: HOST, hasKey: Boolean(KEY) };
