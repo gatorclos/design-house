@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Design House — Room Studio</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">◧</span>
+      <div>
+        <h1>Design House</h1>
+        <input id="address" class="address" />
+      </div>
+    </div>
+    <div class="meta">
+      <label>Beds <input id="beds" type="number" min="0" class="num" /></label>
+      <label>Baths <input id="baths" type="number" min="0" step="0.5" class="num" /></label>
+      <button id="rebuild" class="ghost" title="Rebuild room tabs from bed/bath counts">↻ Rebuild rooms</button>
+      <span id="provider" class="badge"></span>
+      <button id="report" class="primary">Generate report →</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="tabs" id="tabs"></nav>
+    <main class="panel" id="panel"></main>
+  </div>
+
+  <input type="file" id="fileInput" accept="image/*" hidden />
+  <div id="toast" class="toast"></div>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
