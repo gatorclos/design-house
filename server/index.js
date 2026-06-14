@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as store from './lib/store.js';
 import { generateImage, providerInfo } from './lib/pixa.js';
+import { lookupAddress, zillowInfo, fetchPhotoBuffer } from './lib/zillow.js';
 import { buildReport } from './lib/report.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,7 +41,7 @@ function basePrompt(project, room, extra = '') {
 }
 
 // ── Project / rooms ──────────────────────────────────────────────────────────
-app.get('/api/config', (req, res) => res.json(providerInfo()));
+app.get('/api/config', (req, res) => res.json({ ...providerInfo(), zillow: zillowInfo() }));
 
 app.get('/api/project', wrap(async (req, res) => {
   res.json(await store.load());
@@ -100,6 +101,68 @@ app.delete('/api/rooms/:id', wrap(async (req, res) => {
   project.rooms = project.rooms.filter((r) => r.id !== req.params.id);
   await store.save(project);
   res.json({ ok: true });
+}));
+
+// ── Zillow listing lookup ─────────────────────────────────────────────────────
+// Read-only preview: fetch house info + photo URLs without writing anything,
+// so the user can review before committing.
+app.post('/api/lookup', wrap(async (req, res) => {
+  const address = (req.body.address || '').trim();
+  if (!address) return res.status(400).json({ error: 'address required' });
+  res.json(await lookupAddress(address));
+}));
+
+// Import: download the listing photos to disk and persist them on the project.
+// If applyMeta, also adopt the looked-up address/beds/baths.
+app.post('/api/listing/import', wrap(async (req, res) => {
+  const address = (req.body.address || '').trim();
+  if (!address) return res.status(400).json({ error: 'address required' });
+  const result = await lookupAddress(address);
+
+  const photos = [];
+  for (const p of result.photos) {
+    const photoId = store.id();
+    const { buffer, ext } = await fetchPhotoBuffer(p.url);
+    const file = await store.writeListingImage(`${photoId}.${ext}`, buffer);
+    photos.push({ id: photoId, file, caption: p.caption || '' });
+  }
+
+  const project = await store.load();
+  project.listing = {
+    fetchedAt: new Date().toISOString(),
+    provider: zillowInfo().provider,
+    beds: result.beds, baths: result.baths, sqft: result.sqft,
+    yearBuilt: result.yearBuilt, price: result.price,
+    photos,
+  };
+  if (req.body.applyMeta) {
+    project.address = result.address;
+    if (result.beds) project.beds = result.beds;
+    if (result.baths) project.baths = result.baths;
+  }
+  await store.save(project);
+  res.json(project);
+}));
+
+// Push an imported listing photo into a room as its source photo — the bridge
+// that replaces manual per-room uploads.
+app.post('/api/rooms/:id/source-from-listing', wrap(async (req, res) => {
+  const project = await store.load();
+  const room = store.findRoom(project, req.params.id);
+  if (!room) return res.status(404).json({ error: 'room not found' });
+  const photo = project.listing?.photos?.find((p) => p.id === req.body.photoId);
+  if (!photo) return res.status(404).json({ error: 'listing photo not found' });
+
+  const filename = photo.file.split('/').pop();
+  const ext = (filename.split('.').pop() || 'jpg').toLowerCase();
+  const buffer = await store.readListingImage(filename);
+  const file = await store.writeImage(room.id, `source.${ext}`, buffer);
+  const contentType = ext === 'png' ? 'image/png' : ext === 'svg' ? 'image/svg+xml'
+    : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+  room.source = { file, uploadedAt: new Date().toISOString(), contentType };
+  if (room.status === 'empty') room.status = 'uploaded';
+  await store.save(project);
+  res.json(room);
 }));
 
 // ── Upload source photo ──────────────────────────────────────────────────────
@@ -179,5 +242,7 @@ const PORT = process.env.PORT || 4178;
 app.listen(PORT, () => {
   const info = providerInfo();
   console.log(`\n  Design House running →  http://localhost:${PORT}`);
-  console.log(`  Image provider: ${info.provider}${info.provider === 'pixa' ? ` (${info.model} @ ${info.base})` : ' — set PIXA_API_KEY in .env for real generations'}\n`);
+  console.log(`  Image provider: ${info.provider}${info.provider === 'pixa' ? ` (${info.model} @ ${info.base})` : ' — set PIXA_API_KEY in .env for real generations'}`);
+  const z = zillowInfo();
+  console.log(`  Zillow lookup:  ${z.provider}${z.provider === 'rapidapi' ? ` (@ ${z.host})` : ' — set ZILLOW_RAPIDAPI_KEY in .env for real listings'}\n`);
 });
