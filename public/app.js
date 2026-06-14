@@ -15,6 +15,9 @@ async function err(r) { try { return new Error((await r.json()).error || r.statu
 let project = null;
 let activeId = null;
 let busy = false;
+let lookupResult = null; // last /api/lookup preview
+
+const LISTING_VIEW = '__listing__';
 
 const $ = (s) => document.querySelector(s);
 const tabsEl = $('#tabs');
@@ -33,6 +36,7 @@ async function init() {
     b.textContent = cfg.provider === 'pixa' ? `pixa · ${cfg.model}` : 'mock mode';
     b.className = 'badge ' + cfg.provider;
     b.title = cfg.provider === 'pixa' ? `Pixa @ ${cfg.base}` : 'No PIXA_API_KEY set — placeholder images';
+    window.__zillow = cfg.zillow?.provider || 'mock';
   } catch {}
   project = await api.get('/api/project');
   $('#address').value = project.address;
@@ -45,6 +49,14 @@ async function init() {
 // ── Tabs ─────────────────────────────────────────────────────────────────────
 function renderTabs() {
   tabsEl.innerHTML = '';
+
+  const listing = document.createElement('button');
+  listing.className = 'tab listing-tab' + (activeId === LISTING_VIEW ? ' active' : '');
+  const photoCount = project.listing?.photos?.length || 0;
+  listing.innerHTML = `<span class="tab-name">🏠 Listing</span>${photoCount ? `<span class="pill">${photoCount}</span>` : ''}`;
+  listing.onclick = () => { activeId = LISTING_VIEW; renderTabs(); renderPanel(); };
+  tabsEl.appendChild(listing);
+
   for (const room of project.rooms) {
     const b = document.createElement('button');
     b.className = 'tab' + (room.id === activeId ? ' active' : '');
@@ -75,6 +87,7 @@ function selectedGen(room) {
 
 // ── Panel ────────────────────────────────────────────────────────────────────
 function renderPanel() {
+  if (activeId === LISTING_VIEW) return renderListing();
   const room = activeRoom();
   if (!room) { panelEl.innerHTML = '<p>No rooms. Add one from the sidebar.</p>'; return; }
   const gen = selectedGen(room);
@@ -187,6 +200,119 @@ async function saveSpec(room) {
   toast('Spec saved');
 }
 
+// ── Listing (Zillow lookup) ───────────────────────────────────────────────────
+function renderListing() {
+  const l = project.listing;
+  const fmtPrice = (p) => (p ? '$' + Number(p).toLocaleString() : '—');
+  const fmtNum = (n) => (n ? Number(n).toLocaleString() : '—');
+
+  const previewStats = lookupResult ? `
+    <div class="stats">
+      <span><b>${lookupResult.beds}</b> beds</span>
+      <span><b>${lookupResult.baths}</b> baths</span>
+      <span><b>${fmtNum(lookupResult.sqft)}</b> sqft</span>
+      <span>built <b>${lookupResult.yearBuilt || '—'}</b></span>
+      <span><b>${fmtPrice(lookupResult.price)}</b></span>
+    </div>
+    <div class="photo-grid">${lookupResult.photos.map((p) =>
+      `<figure class="photo"><img src="${escapeAttr(p.url)}" alt="${escapeAttr(p.caption)}" /><figcaption>${escapeHtml(p.caption)}</figcaption></figure>`
+    ).join('')}</div>
+    <div class="actions">
+      <label class="chk"><input type="checkbox" id="applyMeta" checked /> Apply address &amp; beds/baths to project</label>
+      <button class="primary" data-import>⭳ Import ${lookupResult.photos.length} photos to project</button>
+    </div>` : '';
+
+  const roomOptions = project.rooms.map((r) => `<option value="${r.id}">${escapeHtml(r.name)}</option>`).join('');
+  const imported = l && l.photos.length ? `
+    <div class="stage" style="margin-top:18px">
+      <h3>Imported listing photos · ${escapeHtml(l.provider)} · ${new Date(l.fetchedAt).toLocaleString()}</h3>
+      <p class="hint">Send any photo into a room as its source, then redesign it.</p>
+      <div class="photo-grid">${l.photos.map((p) =>
+        `<figure class="photo"><img src="${escapeAttr(p.file)}" alt="${escapeAttr(p.caption)}" /><figcaption>${escapeHtml(p.caption)}</figcaption>
+          <div class="use-row"><select data-room>${roomOptions}</select><button data-use="${p.id}">Use as source →</button></div>
+        </figure>`
+      ).join('')}</div>
+    </div>` : (l ? '<p class="hint">No photos in the imported listing.</p>' : '');
+
+  panelEl.innerHTML = `
+    <div class="room-head"><h2>Listing lookup</h2></div>
+    <div class="stage">
+      <h3>Fetch house photos from Zillow</h3>
+      <p class="hint">Enter an address to fetch listing photos. ${zillowBadge()}</p>
+      <div class="edit-row">
+        <input id="lookupAddr" placeholder="123 Main St, City, ST 00000" value="${escapeAttr(project.address || '')}" />
+        <button class="primary" data-look>Look up</button>
+      </div>
+      ${previewStats}
+    </div>
+    ${imported}`;
+
+  wireListing();
+}
+
+function zillowBadge() {
+  return window.__zillow === 'rapidapi'
+    ? 'Using live Zillow data.'
+    : 'Running in <b>mock mode</b> — placeholder photos. Set <code>ZILLOW_RAPIDAPI_KEY</code> for real listings.';
+}
+
+function wireListing() {
+  const lookBtn = panelEl.querySelector('[data-look]');
+  if (lookBtn) lookBtn.onclick = () => doLookup();
+  const addr = panelEl.querySelector('#lookupAddr');
+  if (addr) addr.onkeydown = (e) => { if (e.key === 'Enter') doLookup(); };
+  const importBtn = panelEl.querySelector('[data-import]');
+  if (importBtn) importBtn.onclick = () => doImport(importBtn);
+  panelEl.querySelectorAll('[data-use]').forEach((b) => (b.onclick = () => useAsSource(b)));
+}
+
+async function doLookup() {
+  const address = panelEl.querySelector('#lookupAddr').value.trim();
+  if (!address) return toast('Enter an address first', true);
+  const btn = panelEl.querySelector('[data-look]');
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span>Looking up…'; btn.disabled = true;
+  try {
+    lookupResult = await api.send('/api/lookup', 'POST', { address });
+    renderListing();
+    toast(`Found ${lookupResult.photos.length} photos`);
+  } catch (e) {
+    toast(e.message, true);
+    btn.innerHTML = original; btn.disabled = false;
+  }
+}
+
+async function doImport(btn) {
+  const address = panelEl.querySelector('#lookupAddr').value.trim();
+  const applyMeta = panelEl.querySelector('#applyMeta')?.checked;
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span>Importing…'; btn.disabled = true;
+  try {
+    project = await api.send('/api/listing/import', 'POST', { address, applyMeta });
+    if (applyMeta) { $('#address').value = project.address; $('#beds').value = project.beds; $('#baths').value = project.baths; }
+    lookupResult = null;
+    renderTabs(); renderListing();
+    toast('Listing imported');
+  } catch (e) {
+    toast(e.message, true);
+    btn.innerHTML = original; btn.disabled = false;
+  }
+}
+
+async function useAsSource(btn) {
+  const photoId = btn.dataset.use;
+  const roomId = btn.closest('.photo').querySelector('[data-room]').value;
+  btn.disabled = true;
+  try {
+    const updated = await api.send(`/api/rooms/${roomId}/source-from-listing`, 'POST', { photoId });
+    const room = project.rooms.find((r) => r.id === roomId);
+    if (room) Object.assign(room, updated);
+    renderTabs();
+    toast(`Set as source for ${updated.name}`);
+  } catch (e) { toast(e.message, true); }
+  finally { btn.disabled = false; }
+}
+
 // ── Actions ──────────────────────────────────────────────────────────────────
 async function act(kind, room, btn) {
   if (kind === 'upload') return chooseFile(room);
@@ -241,6 +367,11 @@ function download(room) {
 
 // ── Top bar ──────────────────────────────────────────────────────────────────
 $('#report').onclick = () => window.open('/api/report', '_blank');
+$('#lookup').onclick = () => {
+  activeId = LISTING_VIEW; renderTabs(); renderPanel();
+  const addr = panelEl.querySelector('#lookupAddr');
+  if (addr) { addr.value = $('#address').value; doLookup(); }
+};
 $('#rebuild').onclick = async () => {
   if (!confirm('Rebuild room tabs from the bed/bath counts? Rooms with uploads or redesigns are kept.')) return;
   project = await api.send('/api/project', 'PUT', {

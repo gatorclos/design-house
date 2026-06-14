@@ -9,11 +9,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const PROJECT_FILE = path.join(DATA_DIR, 'project.json');
 export const ROOMS_DIR = path.join(DATA_DIR, 'rooms');
+export const LISTING_DIR = path.join(DATA_DIR, 'listing');
 
 export const id = () => crypto.randomBytes(6).toString('hex');
 
 async function ensureDirs() {
   await fs.mkdir(ROOMS_DIR, { recursive: true });
+  await fs.mkdir(LISTING_DIR, { recursive: true });
 }
 
 // A sensible default room set for a single-family home. Bedrooms/baths are
@@ -59,6 +61,9 @@ const DEFAULT_PROJECT = () => ({
   address: '11505 Old Creedmoor Rd, Raleigh, NC 27613',
   beds: 4,
   baths: 3,
+  // Populated after a Zillow lookup is imported:
+  // { fetchedAt, provider, beds, baths, sqft, yearBuilt, price, photos: [{ id, file, caption }] }
+  listing: null,
   rooms: buildDefaultRooms({ beds: 4, baths: 3 }),
 });
 
@@ -98,4 +103,14 @@ export async function writeImage(roomId, filename, buffer) {
 
 export async function readImage(roomId, filename) {
   return fs.readFile(path.join(ROOMS_DIR, roomId, filename));
+}
+
+export async function writeListingImage(filename, buffer) {
+  await fs.mkdir(LISTING_DIR, { recursive: true });
+  await fs.writeFile(path.join(LISTING_DIR, filename), buffer);
+  return `/data/listing/${filename}`;
+}
+
+export async function readListingImage(filename) {
+  return fs.readFile(path.join(LISTING_DIR, filename));
 }

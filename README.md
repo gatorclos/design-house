@@ -8,6 +8,8 @@ furniture, notes) you can hand to a contractor.
 Built for **11505 Old Creedmoor Rd, Raleigh, NC 27613** but works for any home.
 
 ## Features
+- **Listing lookup** — enter an address to fetch house photos from Zillow, import
+  them to the project, and push any photo straight into a room as its source.
 - **Room tabs** auto-generated from bed/bath counts (add / rename / delete freely).
 - **Upload** a source photo per room — stored locally on disk under `./data/`.
 - **Generate** a photorealistic redesign from the source photo.
@@ -44,15 +46,30 @@ The Generate / Regenerate / Apply-change buttons call an image provider:
 Recommended model: `seedream-v5-lite` (strong image editing, ~16 credits/image).
 Alternatives: `nano-banana-2`, `seedream-v4-5`, `gpt-image-2`, `grok-imagine-image`.
 
+## Listing lookup (Zillow)
+
+The **🏠 Listing** tab (or the **⌕ Fetch listing** button) looks up a house by
+address and pulls its photos:
+
+- **RapidAPI (real data):** set `ZILLOW_RAPIDAPI_KEY` in `.env` (and optionally
+  `ZILLOW_RAPIDAPI_HOST`, default `zillow-com1.p.rapidapi.com`). Zillow has no
+  public API and blocks scraping, so the adapter in `server/lib/zillow.js` calls
+  a third-party Zillow listing API and maps the response; tweak the mapping there
+  if your provider's shape differs.
+- **Mock (no key):** with no key set, the lookup runs in **mock mode**, returning
+  deterministic placeholder photos and stats so you can click through the whole
+  flow before wiring real credentials.
+
+Look up → review photos → **Import to project** (optionally adopting the
+address/beds/baths) → on any imported photo, pick a room and **Use as source →**
+to drop it into that room and redesign it.
+
 ## Where data lives
 
 Everything is on your machine under `./data/` (git-ignored):
-- `data/project.json` — rooms, specs, generation history
-- `data/rooms/<roomId>/source.*` — uploaded photos
+- `data/project.json` — rooms, specs, generation history, imported listing
+- `data/rooms/<roomId>/source.*` — room source photos
 - `data/rooms/<roomId>/gen-*.{png,jpg,svg}` — redesigns
+- `data/listing/*` — imported Zillow listing photos
 
 Delete `./data/` to start fresh.
-
-## Note on the listing photos
-Zillow blocks automated photo scraping (PerimeterX/CAPTCHA), so source photos are
-uploaded manually per room rather than pulled from the listing URL.
