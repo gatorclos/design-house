@@ -1,9 +1,9 @@
 // Design House — client-owned SPA.
 //
 // All project state lives in the browser (localStorage). Source photos are
-// chosen locally and never uploaded for storage — they're only sent transiently
-// to the server's Pixa proxy when you Generate. Real house facts come from
-// /api/lookup; real redesigns come from /api/generate + /api/asset polling.
+// chosen locally and never leave the device. Real house facts come from the
+// server's /api/lookup (RentCast). Redesigns are generated keyless via
+// Pollinations (Flux), fetched directly by the browser — no server, no API key.
 
 const api = {
   async get(u) { const r = await fetch(u); if (!r.ok) throw await err(r); return r.json(); },
@@ -13,7 +13,6 @@ const api = {
   },
 };
 async function err(r) { try { return new Error((await r.json()).error || r.statusText); } catch { return new Error(r.statusText); } }
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const STORE_KEY = 'design-house:project';
 const $ = (s) => document.querySelector(s);
@@ -72,12 +71,11 @@ async function init() {
 
 function renderBadge() {
   const b = $('#provider');
-  const img = cfg.image || {};
-  const ok = img.provider === 'pixa' && cfg.property?.hasKey;
-  b.textContent = ok ? `pixa · ${img.model}` : 'keys needed';
-  b.className = 'badge ' + (ok ? 'pixa' : 'mock');
-  b.title = `Image gen: ${img.provider === 'pixa' ? `pixa (${img.model})` : 'set PIXA_API_KEY'}\n`
-    + `House lookup: ${cfg.property?.hasKey ? cfg.property.provider : 'set PROPERTY_API_KEY'}`;
+  const lookupOn = !!cfg.property?.hasKey;
+  b.textContent = `redesign ✓ · lookup ${lookupOn ? '✓' : 'off'}`;
+  b.className = 'badge ' + (lookupOn ? 'pixa' : 'mock');
+  b.title = `Redesign: Pollinations (keyless)\n`
+    + `House lookup: ${lookupOn ? cfg.property.provider : 'set RENTCAST_API_KEY'}`;
 }
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────
@@ -137,8 +135,8 @@ function renderPanel() {
         <div class="stage">
           <h3>Redesign</h3>
           <div class="viewer">${gen
-            ? `<img src="${gen.dataUrl}" alt="redesign" />`
-            : `<div class="placeholder">No redesign yet.<br/>Add a photo of this room (optional), set the design spec, then Generate.</div>`}</div>
+            ? `<img src="${gen.url}" alt="redesign" />`
+            : `<div class="placeholder">No redesign yet.<br/>Set the design spec (and optionally add a room photo), then Generate.</div>`}</div>
           <div class="actions">
             <button class="primary" data-act="generate">✦ Generate</button>
             <button data-act="regenerate" ${gen ? '' : 'disabled'}>↻ Regenerate</button>
@@ -149,7 +147,7 @@ function renderPanel() {
             <button data-act="edit" ${gen ? '' : 'disabled'}>Apply change</button>
           </div>
           <div class="thumbs">${s.generations.map((g) =>
-            `<img class="thumb ${g.id === (gen && gen.id) ? 'active' : ''}" data-gen="${g.id}" src="${g.dataUrl}" title="${escapeHtml(g.kind)} · ${new Date(g.createdAt).toLocaleTimeString()}" />`
+            `<img class="thumb ${g.id === (gen && gen.id) ? 'active' : ''}" data-gen="${g.id}" src="${g.url}" title="${escapeHtml(g.kind)} · ${new Date(g.createdAt).toLocaleTimeString()}" />`
           ).join('')}</div>
         </div>
 
@@ -238,14 +236,10 @@ async function act(kind, room, btn) {
 
   const s = sess(room.id);
   let prompt = buildPrompt(room);
-  let image = s.before ? await downscale(s.before) : null;
-
   if (kind === 'edit') {
     const change = panelEl.querySelector('[data-edit]').value.trim();
     if (!change) return toast('Type the change you want first', true);
-    const base = selectedGen(s);
     prompt = buildPrompt(room, `Apply this specific change: ${change}.`);
-    if (base) image = await downscale(base.dataUrl); // edit the current redesign
   }
 
   busy = true;
@@ -253,8 +247,8 @@ async function act(kind, room, btn) {
   btn.innerHTML = `<span class="spinner"></span>${kind === 'edit' ? 'Applying…' : 'Generating…'}`;
   disableActions(true);
   try {
-    const dataUrl = await runGeneration({ prompt, image });
-    s.generations.push({ id: uid(), dataUrl, prompt, kind, createdAt: new Date().toISOString() });
+    const url = await runGeneration(prompt);
+    s.generations.push({ id: uid(), url, prompt, kind, createdAt: new Date().toISOString() });
     s.selectedGenId = s.generations[s.generations.length - 1].id;
     renderTabs(); renderPanel();
     toast(kind === 'edit' ? 'Change applied' : 'Redesign ready');
@@ -264,20 +258,19 @@ async function act(kind, room, btn) {
   } finally { busy = false; }
 }
 
-async function runGeneration({ prompt, image }) {
-  const start = await api.send('/api/generate', 'POST', { prompt, image });
-  if (start.status === 'ready') return start.dataUrl;
-  if (start.status === 'pending') return pollAsset(start.assetId);
-  throw new Error('generation failed to start');
-}
-async function pollAsset(id) {
-  for (let i = 0; i < 90; i++) {
-    await sleep(2000);
-    let a; try { a = await api.get(`/api/asset/${id}`); } catch { continue; }
-    if (a.status === 'ready') return a.dataUrl;
-    if (a.status === 'failed') throw new Error(a.error || 'generation failed');
-  }
-  throw new Error('generation timed out');
+// Keyless image generation via Pollinations (Flux), fetched directly by the
+// browser — no server call, no API key, no timeout limits. The Promise resolves
+// when the generated image finishes loading.
+function runGeneration(prompt) {
+  const seed = Math.floor(Math.random() * 1e9);
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}`
+    + `?model=flux&width=1024&height=768&seed=${seed}&nologo=true`;
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(url);
+    img.onerror = () => reject(new Error('image generation failed — try again'));
+    img.src = url;
+  });
 }
 
 function disableActions(state) {
@@ -301,22 +294,6 @@ function buildPrompt(room, extra = '') {
   ].filter(Boolean).join(' ');
 }
 
-// Shrink a data URL to keep the request under serverless body limits.
-function downscale(dataUrl, max = 1024, quality = 0.85) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width: w, height: h } = img;
-      if (w > max || h > max) { const sc = max / Math.max(w, h); w = Math.round(w * sc); h = Math.round(h * sc); }
-      const c = document.createElement('canvas'); c.width = w; c.height = h;
-      c.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(c.toDataURL('image/jpeg', quality));
-    };
-    img.onerror = () => reject(new Error('could not read image'));
-    img.src = dataUrl;
-  });
-}
-
 function choosePhoto(room) {
   const input = $('#fileInput');
   input.value = '';
@@ -330,12 +307,16 @@ function choosePhoto(room) {
   input.click();
 }
 
-function download(room) {
+async function download(room) {
   const gen = selectedGen(sess(room.id)); if (!gen) return;
-  const a = document.createElement('a');
-  a.href = gen.dataUrl;
-  a.download = `${room.name.replace(/\s+/g, '-').toLowerCase()}-${gen.id}.png`;
-  document.body.appendChild(a); a.click(); a.remove();
+  try {
+    const blob = await (await fetch(gen.url)).blob();
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = u; a.download = `${room.name.replace(/\s+/g, '-').toLowerCase()}-${gen.id}.jpg`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(u);
+  } catch { window.open(gen.url, '_blank'); }
 }
 
 // ── Top bar ──────────────────────────────────────────────────────────────────
@@ -392,7 +373,7 @@ function openReport() {
       ['Furniture', d.furniture], ['Notes', d.notes],
     ].filter(([, v]) => v).map(([k, v]) => `<tr><th>${k}</th><td>${escapeHtml(v)}</td></tr>`).join('');
     return `<section class="r"><h2>${escapeHtml(room.name)}</h2>
-      ${gen ? `<img src="${gen.dataUrl}"/>` : '<div class="noimg">No redesign generated</div>'}
+      ${gen ? `<img src="${gen.url}"/>` : '<div class="noimg">No redesign generated</div>'}
       <table>${specs || '<tr><td>No spec captured</td></tr>'}</table></section>`;
   }).join('');
   const html = `<!doctype html><html><head><meta charset="utf-8"/><title>Design House — ${escapeHtml(project.address || 'Report')}</title>
